@@ -1,0 +1,4 @@
+.env
+.cursorignore
+.venv_ml_telegram/
+__pycache__/
