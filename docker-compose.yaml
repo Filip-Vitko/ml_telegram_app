@@ -1,0 +1,45 @@
+services:
+  llm_service:
+    build:
+      context: ./llm_service
+      dockerfile: llm.Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - OLLAMA_BASE_URL=http://host.docker.internal:11434
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  api:
+    build:
+      context: ./api
+      dockerfile: api.Dockerfile
+    ports:
+      - "8001:8001"
+    environment:
+      - LLM_SERVICE_URL=http://llm_service:8000
+    depends_on:
+      llm_service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+  
+  telegram_bot:
+    build:
+      context: telegram_bot
+      dockerfile: telegram.Dockerfile
+    env_file:
+      - .env
+    environment:
+      - API_URL=http://api:8001
+    depends_on:
+      api:
+        condition: service_healthy
