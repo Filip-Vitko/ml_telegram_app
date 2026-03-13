@@ -2,3 +2,4 @@
 .cursorignore
 .venv_ml_telegram/
 __pycache__/
+api/add_later.txt
