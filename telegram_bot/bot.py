@@ -1,7 +1,9 @@
 import telegram.ext
 import os
-from pathlib import Path
 import requests
+from telegram.ext import filters
+from pathlib import Path
+
 if Path(".env").exists():
     from dotenv import load_dotenv
     load_dotenv()
@@ -33,12 +35,28 @@ async def help(update: telegram.Update, context: telegram.ext.ContextTypes.DEFAU
         "/help -> Show help"
     )
 
+async def chat(update, context: telegram.ext.ContextTypes.DEFAULT_TYPE):
+    prompt = (update.message.text).strip()
+    if not prompt:
+        await update.message.reply_text("Please provide a prompt to chat with the bot.")
+        return
+
+    try:
+        r = requests.post(f"{os.getenv("API_URL")}/chat", json={"prompt": prompt})
+        r.raise_for_status()
+        data = r.json()
+        answer = data.get("response",) or "(empty response)"
+        await update.message.reply_text(answer)
+    except requests.exceptions.RequestException as e:
+        await update.message.reply_text(f"LLM request failed: {e}")
+
 def main():
-    application = telegram.ext.Application.builder().token(TOKEN).build()
+    app = telegram.ext.Application.builder().token(TOKEN).build()
     send_message("Bot started!")
-    application.add_handler(telegram.ext.CommandHandler("start", start))
-    application.add_handler(telegram.ext.CommandHandler("help", help))
-    application.run_polling()
+    app.add_handler(telegram.ext.CommandHandler("start", start))
+    app.add_handler(telegram.ext.CommandHandler("help", help))
+    app.add_handler(telegram.ext.MessageHandler(filters.TEXT & ~filters.COMMAND, chat))
+    app.run_polling()
 
 
 if __name__ == "__main__":
