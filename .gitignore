@@ -4,3 +4,4 @@
 __pycache__/
 api/add_later.txt
 llm_service/add_later.txt
+llm_service/test.py
