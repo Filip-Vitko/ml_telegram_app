@@ -45,3 +45,16 @@ services:
     depends_on:
       api:
         condition: service_healthy
+
+  db:
+    image: postgres:16
+    container_name: postgres_db
+    restart: always
+    ports: 
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: app_db
