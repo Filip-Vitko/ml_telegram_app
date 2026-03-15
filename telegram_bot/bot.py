@@ -10,6 +10,7 @@ if Path(".env").exists():
 
 TOKEN = os.getenv("TELEGRAM_HTTP_API")
 ID = os.getenv("CHAT_ID")
+API_URL = os.getenv("API_URL")
 
 if not TOKEN:
     raise ValueError("TELEGRAM_HTTP_API environment variable is not set!")
@@ -17,32 +18,37 @@ if not TOKEN:
 if not ID:
     raise ValueError("CHAT_ID environment variable is not set!")
 
+if not API_URL:
+    raise ValueError("API_URL environment variable is not set!")
+
 def send_message(message: str):
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
     data = {
         "chat_id": ID,
-        "text": message
-    }
+        "text": message }
     response = requests.post(url, json=data)
     return response.json()
 
-async def start(update: telegram.Update, context: telegram.ext.ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Hello! I'm your bot. How can I help you today?")
-
-async def help(update: telegram.Update, context: telegram.ext.ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "/start -> Start the bot"
-        "/help -> Show help"
-    )
+def get_model_name():
+    try:
+        r = requests.get(f"{API_URL}/models", timeout=5)
+        r.raise_for_status()
+        data = r.json()
+        models = data.get("models", [])
+        if models:
+            return models[0]
+        return None
+    except Exception as e:
+        print(f"Failed to get model name: {e}")
+        return None
 
 async def chat(update, context: telegram.ext.ContextTypes.DEFAULT_TYPE):
     prompt = (update.message.text).strip()
     if not prompt:
         await update.message.reply_text("Please provide a prompt to chat with the bot.")
         return
-
     try:
-        r = requests.post(f"{os.getenv("API_URL")}/chat", json={"prompt": prompt})
+        r = requests.post(f"{API_URL}/chat", json={"prompt": prompt})
         r.raise_for_status()
         data = r.json()
         answer = data.get("response",) or "(empty response)"
@@ -52,9 +58,11 @@ async def chat(update, context: telegram.ext.ContextTypes.DEFAULT_TYPE):
 
 def main():
     app = telegram.ext.Application.builder().token(TOKEN).build()
-    send_message("Bot started!")
-    app.add_handler(telegram.ext.CommandHandler("start", start))
-    app.add_handler(telegram.ext.CommandHandler("help", help))
+    model_name = get_model_name()
+    if model_name:
+        send_message(f"Bot started using model {model_name}!")
+    else:
+        send_message(f"Bot started! (Model not found)")
     app.add_handler(telegram.ext.MessageHandler(filters.TEXT & ~filters.COMMAND, chat))
     app.run_polling()
 
