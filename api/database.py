@@ -1,11 +1,31 @@
-from contextlib import asynccontextmanager
+import os
 from datetime import datetime
-from fastapi import Depends,FastAPI, HTTPException, Query
-from sqlmodel import create_engine, Field, Session, select, SQLModel
-from typing import Annotated, Literal, Optional
+from typing import Literal, Optional
 from zoneinfo import ZoneInfo
+from enum import Enum
+
+from sqlmodel import Field, Session, SQLModel, create_engine, select
 
 UTC = ZoneInfo("UTC")
+
+DATABASE_URL = os.getenv(
+    "DATABASE_URL",
+    "postgresql+psycopg://postgres:postgres@db:5432/app_db",
+)
+
+class MessageRole(str, Enum):
+    SYSTEM = "system"
+    USER = "user"
+    ASSISTANT = "assistant"
+
+    @classmethod
+    def from_str(cls, value: str) -> "MessageRole":
+        if value.lower() == "system":
+            return cls.SYSTEM
+        elif value.lower() == "user":
+            return cls.USER
+        elif value.lower() == "assistant":
+            return cls.ASSISTANT
 
 class Conversation(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -18,7 +38,7 @@ class Conversation(SQLModel, table=True):
 class Message(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     conversation_id: int = Field(index=True, foreign_key="conversation.id")
-    role: Literal["system", "user", "assistant"]
+    role: MessageRole
     content: str
     # TODO: token_count
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
@@ -32,10 +52,7 @@ class MessageCreate(SQLModel):
     role: Literal["system", "user", "assistant"]
     content: str = Field(max_length=10000)
 
-    
-postgresql_url = "postgresql://postgres:postgres@db:5432/app_db"
-
-engine = create_engine(postgresql_url)
+engine = create_engine(DATABASE_URL)
 
 def create_db_and_tables():
     SQLModel.metadata.create_all(engine)
@@ -44,51 +61,51 @@ def get_session():
     with Session(engine) as session:
         yield session
 
-SessionDep = Annotated[Session, Depends(get_session)]
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    create_db_and_tables()
-    yield
-    engine.dispose()
-
-app = FastAPI(lifespan=lifespan)    
-
-@app.post("/conversations", response_model=Conversation)
-def create_conversation(data: ConversationCreate, session: SessionDep):
+def create_conversation(data: ConversationCreate, session: Session):
     conversation = Conversation.model_validate(data)
     session.add(conversation)
     session.commit()
     session.refresh(conversation)
-    return conversation  
+    return conversation
 
-@app.get("/conversations", response_model=list[Conversation])
-def read_conversations(
-    session: SessionDep,
-    offset: int = 0,
-    limit: Annotated[int, Query(ge=1, le=100)] = 100,
-):
-    conversations = session.exec(select(Conversation).order_by(Conversation.created_at.desc()).offset(offset).limit(limit)).all()
-    return conversations
+def list_conversations(session: Session, offset: int = 0, limit: int = 100):
+    return session.exec(
+        select(Conversation)
+        .order_by(Conversation.created_at.desc())
+        .offset(offset)
+        .limit(limit)
+    ).all()
 
-@app.post("/messages", response_model=Message)
-def create_message(data: MessageCreate, session: SessionDep):
-    conversation = session.get(Conversation, data.conversation_id)
-    if not conversation:
-        raise HTTPException(status_code=404, detail="Conversation not found")
+def get_latest_conversation_for_user(session: Session, user_id: str):
+    return session.exec(
+        select(Conversation)
+        .where(Conversation.user_id == user_id)
+        .order_by(Conversation.created_at.desc())
+    ).first()
 
+def get_or_create_conversation(session: Session, user_id: str):
+    conversation = get_latest_conversation_for_user(session, user_id)
+    if conversation:
+        return conversation
+    return create_conversation(ConversationCreate(user_id=user_id), session)
+
+def create_message(data: MessageCreate, session: Session):
     message = Message.model_validate(data)
     session.add(message)
     session.commit()
     session.refresh(message)
     return message
 
-@app.get("/conversations/{conversation_id}/messages", response_model=list[Message])
-def read_conversation_messages(
+def list_messages_for_conversation(
+    session: Session,
     conversation_id: int,
-    session: SessionDep,
     offset: int = 0,
-    limit: Annotated[int, Query(ge=1, le=100)] = 100,
+    limit: int = 100,
 ):
-    messages = session.exec(select(Message).where(Message.conversation_id == conversation_id).order_by(Message.created_at.asc()).offset(offset).limit(limit)).all()
-    return messages
+    return session.exec(
+        select(Message)
+        .where(Message.conversation_id == conversation_id)
+        .order_by(Message.created_at.asc())
+        .offset(offset)
+        .limit(limit)
+    ).all()

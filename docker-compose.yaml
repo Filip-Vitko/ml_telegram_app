@@ -23,8 +23,11 @@ services:
     ports:
       - "8001:8001"
     environment:
+      - DATABASE_URL=postgresql+psycopg://postgres:postgres@db:5432/app_db
       - LLM_SERVICE_URL=http://llm_service:8000
     depends_on:
+      db:
+        condition: service_healthy
       llm_service:
         condition: service_healthy
     healthcheck:
@@ -58,3 +61,12 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: app_db
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d app_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+volumes:
+  postgres_data:

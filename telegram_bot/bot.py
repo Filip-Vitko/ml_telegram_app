@@ -47,8 +47,13 @@ async def chat(update, context: telegram.ext.ContextTypes.DEFAULT_TYPE):
     if not prompt:
         await update.message.reply_text("Please provide a prompt to chat with the bot.")
         return
+    chat_id = update.effective_chat.id
     try:
-        r = requests.post(f"{API_URL}/chat", json={"prompt": prompt})
+        r = requests.post(
+            f"{API_URL}/chat",
+            json={"user_id": str(chat_id), "prompt": prompt},
+            timeout=310,
+        )
         r.raise_for_status()
         data = r.json()
         answer = data.get("response",) or "(empty response)"
